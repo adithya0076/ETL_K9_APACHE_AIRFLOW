@@ -64,12 +64,6 @@ insert_k9_data_task = PythonOperator(
     dag=dag,
 )
 
-# start_streamlit_task = PythonOperator(
-#     task_id='start_streamlit',
-#     python_callable=start_streamlit_app,
-#     dag=dag,
-# )
-
 # dependencies
 (
     fetch_k9_data_task
