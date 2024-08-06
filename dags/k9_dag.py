@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
-from scripts.k9_etl import extract_and_transform_data, load_data, start_streamlit_app
+from scripts.k9_etl import extract_and_transform_data, load_data
 
 
 default_args = {

@@ -1,5 +1,4 @@
 import requests
-import subprocess
 import pandas as pd
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -18,16 +17,13 @@ def extract_and_transform_data(ti):
     response = requests.get(url)
     data = response.json()
 
-    # Convert the JSON data into a pandas DataFrame
     df = pd.DataFrame(data)
 
     # Remove duplicates
     df_unique = df.drop_duplicates(subset=["fact", "created_date"])
 
-    # Apply the categorization function
     df_unique["category"] = df_unique["fact"].apply(categorize_fact)
 
-    # Push the transformed data to XCom
     ti.xcom_push(key="k9_data", value=df_unique.to_dict("records"))
 
 
@@ -46,7 +42,6 @@ def load_data(ti):
         category = data["category"]
         created_date = data["created_date"]
 
-        # Insert or update 'facts' table and get the fact ID
         cursor.execute(
             """
             INSERT INTO facts (fact, category, created_date)
@@ -61,7 +56,6 @@ def load_data(ti):
 
         fact_id = cursor.fetchone()[0]
 
-        # Insert into 'fact_versions' table
         cursor.execute(
             """
             INSERT INTO fact_versions (fact_id, fact, version, created_at)
@@ -75,6 +69,3 @@ def load_data(ti):
     connection.commit()
     cursor.close()
     connection.close()
-
-def start_streamlit_app():
-    subprocess.run(["streamlit", "run", "/streamlit/app.py"], check=True)
