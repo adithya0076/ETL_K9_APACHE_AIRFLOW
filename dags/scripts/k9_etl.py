@@ -1,4 +1,5 @@
 import requests
+import subprocess
 import pandas as pd
 from airflow.providers.postgres.hooks.postgres import PostgresHook
 
@@ -74,3 +75,6 @@ def load_data(ti):
     connection.commit()
     cursor.close()
     connection.close()
+
+def start_streamlit_app():
+    subprocess.run(["streamlit", "run", "/streamlit/app.py"], check=True)

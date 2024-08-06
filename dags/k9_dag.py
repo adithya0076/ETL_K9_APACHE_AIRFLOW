@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
-from scripts.k9_etl import extract_and_transform_data, load_data
+from scripts.k9_etl import extract_and_transform_data, load_data, start_streamlit_app
 
 
 default_args = {
@@ -63,6 +63,12 @@ insert_k9_data_task = PythonOperator(
     python_callable=load_data,
     dag=dag,
 )
+
+# start_streamlit_task = PythonOperator(
+#     task_id='start_streamlit',
+#     python_callable=start_streamlit_app,
+#     dag=dag,
+# )
 
 # dependencies
 (
