@@ -34,7 +34,7 @@ create_fact_table_task = PostgresOperator(
         id SERIAL PRIMARY KEY,
         fact TEXT UNIQUE NOT NULL,
         category VARCHAR(20) NOT NULL,
-        created_date TIMESTAMP NOT NULL,
+        created_date TEXT NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );

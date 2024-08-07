@@ -13,7 +13,7 @@ def categorize_fact(fact):
 
 # fetch data from the K9 data source
 def extract_and_transform_data(ti):
-    url = "https://raw.githubusercontent.com/vetstoria/random-k9-etl/main/source_data.json"
+    url = "https://raw.githubusercontent.com/adithya0076/random-k9-etl/main/source_data.json"
     response = requests.get(url)
     data = response.json()
 
@@ -43,7 +43,6 @@ def load_data(ti):
     existing_ids = set(row[0] for row in cursor.fetchall())
     print("existing_ids", existing_ids)
 
-    ####
     new_ids = set(data["created_date"] for data in k9_data)
     print("new ids", new_ids)
 
@@ -52,14 +51,12 @@ def load_data(ti):
 
     ## insert function
     for i in filtered_ids:
-        print("inserting new data")
-
         for item in k9_data:
             if item["created_date"] == i:
                 fact = item["fact"]
                 category = item["category"]
                 created_date = item["created_date"]
-
+                print("inserting new data")
                 cursor.execute(
                     """
                     INSERT INTO facts (fact, category, created_date)
@@ -99,55 +96,50 @@ def load_data(ti):
                     """,
                     (created_date,),
                 )
-                existing_fact = cursor.fetchone()[0]
+                existing_fact = cursor.fetchone()
+                if existing_fact:
+                    existing_fact = existing_fact[0]
+                    if existing_fact != fact:
+                        print("updating new data")
+                        cursor.execute(
+                            """
+                            UPDATE facts
+                            SET fact = %s,
+                                category = %s,
+                                updated_at = CURRENT_TIMESTAMP
+                            WHERE created_date = %s
+                            RETURNING id;
+                            """,
+                            (fact, category, created_date),
+                        )
 
-                if existing_fact != fact:
-                    cursor.execute(
-                        """
-                        UPDATE facts
-                        SET fact = %s,
-                            category = %s,
-                            updated_at = CURRENT_TIMESTAMP
-                        WHERE created_date = %s
-                        RETURNING id;
-                        """,
-                        (fact, category, created_date),
-                    )
+                        fact_id = cursor.fetchone()[0]
 
-                    fact_id = cursor.fetchone()[0]
+                        cursor.execute(
+                            """
+                            INSERT INTO fact_versions (fact_id, fact, version, created_at)
+                            SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
+                            FROM fact_versions
+                            WHERE fact_id = %s;
+                            """,
+                            (fact_id, fact, fact_id),
+                        )
+                print("existing_fact", existing_fact)
 
-                    # Insert into fact_versions
-                    cursor.execute(
-                        """
-                        INSERT INTO fact_versions (fact_id, fact, version, created_at)
-                        SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
-                        FROM fact_versions
-                        WHERE fact_id = %s;
-                        """,
-                        (fact_id, fact, fact_id),
-                    )
     connection.commit()
 
-    ## Delete flow
+    # delete flow
     for i in existing_ids:
-        for data in k9_data:
-            if i != data["created_date"]:
-                cursor.execute(
-                    """
-                    DELETE FROM facts
-                    WHERE created_date = %s;
-                    """,
-                    (i,),
-                )
+        if i not in new_ids:
+            print("deleting data")
+            cursor.execute(
+                """
+                DELETE FROM facts
+                WHERE created_date = %s;
+                """,
+                (i,),
+            )
 
-
-    # Commit transaction
     connection.commit()
-
-    # except Exception as e:
-    #     print(f"Error executing SQL statements: {e}")
-    #     connection.rollback()
-
-    # finally:
-    #     cursor.close()
-    #     connection.close()
+    cursor.close()
+    connection.close()
