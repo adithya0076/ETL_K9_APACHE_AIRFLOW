@@ -48,7 +48,7 @@ create_fact_versions_table_task = PostgresOperator(
     sql="""
     CREATE TABLE IF NOT EXISTS fact_versions (
         id SERIAL PRIMARY KEY,
-        fact_id INTEGER NOT NULL REFERENCES facts(id),
+        fact_id INTEGER NOT NULL REFERENCES facts(id) ON DELETE CASCADE,
         fact TEXT NOT NULL,
         version INTEGER NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -1,7 +1,7 @@
+import json
 import requests
 import pandas as pd
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-
 
 
 def categorize_fact(fact):
@@ -9,7 +9,7 @@ def categorize_fact(fact):
         return "with_numbers"
     else:
         return "without_numbers"
-    
+
 
 # fetch data from the K9 data source
 def extract_and_transform_data(ti):
@@ -37,35 +37,117 @@ def load_data(ti):
     connection = pg_hook.get_conn()
     cursor = connection.cursor()
 
-    for data in k9_data:
-        fact = data["fact"]
-        category = data["category"]
-        created_date = data["created_date"]
+    # try:
+    cursor.execute("BEGIN;")
+    cursor.execute("SELECT created_date FROM facts;")
+    existing_ids = set(row[0] for row in cursor.fetchall())
+    print("existing_ids", existing_ids)
 
-        cursor.execute(
-            """
-            INSERT INTO facts (fact, category, created_date)
-            VALUES (%s, %s, %s)
-            ON CONFLICT (fact) DO UPDATE
-            SET category = EXCLUDED.category,
-                updated_at = CURRENT_TIMESTAMP
-            RETURNING id;
-        """,
-            (fact, category, created_date),
-        )
+    ####
+    new_ids = set(data["created_date"] for data in k9_data)
+    print("new ids", new_ids)
 
-        fact_id = cursor.fetchone()[0]
+    filtered_ids = new_ids - existing_ids
+    print("filtered_ids", filtered_ids)
 
-        cursor.execute(
-            """
-            INSERT INTO fact_versions (fact_id, fact, version, created_at)
-            SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
-            FROM fact_versions
-            WHERE fact_id = %s
-        """,
-            (fact_id, fact, fact_id),
-        )
+    ## insert function
+    for i in filtered_ids:
+        print("inserting new data")
 
+        for item in k9_data:
+            if item["created_date"] == i:
+                fact = item["fact"]
+                category = item["category"]
+                created_date = item["created_date"]
+
+                cursor.execute(
+                    """
+                    INSERT INTO facts (fact, category, created_date)
+                    VALUES (%s, %s, %s)
+                    ON CONFLICT (fact) DO UPDATE
+                    SET category = EXCLUDED.category,
+                        updated_at = CURRENT_TIMESTAMP
+                    RETURNING id;
+                """,
+                    (fact, category, created_date),
+                )
+
+                fact_id = cursor.fetchone()[0]
+
+                cursor.execute(
+                    """
+                    INSERT INTO fact_versions (fact_id, fact, version, created_at)
+                    SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
+                    FROM fact_versions
+                    WHERE fact_id = %s
+                """,
+                    (fact_id, fact, fact_id),
+                )
     connection.commit()
-    cursor.close()
-    connection.close()
+
+    # update flow
+    for i in existing_ids:
+        for data in k9_data:
+            fact = data["fact"]
+            category = data["category"]
+            created_date = data["created_date"]
+
+            if item["created_date"] == i:
+                cursor.execute(
+                    """
+                    SELECT fact FROM facts WHERE created_date = %s;
+                    """,
+                    (created_date,),
+                )
+                existing_fact = cursor.fetchone()[0]
+
+                if existing_fact != fact:
+                    cursor.execute(
+                        """
+                        UPDATE facts
+                        SET fact = %s,
+                            category = %s,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE created_date = %s
+                        RETURNING id;
+                        """,
+                        (fact, category, created_date),
+                    )
+
+                    fact_id = cursor.fetchone()[0]
+
+                    # Insert into fact_versions
+                    cursor.execute(
+                        """
+                        INSERT INTO fact_versions (fact_id, fact, version, created_at)
+                        SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
+                        FROM fact_versions
+                        WHERE fact_id = %s;
+                        """,
+                        (fact_id, fact, fact_id),
+                    )
+    connection.commit()
+
+    ## Delete flow
+    for i in existing_ids:
+        for data in k9_data:
+            if i != data["created_date"]:
+                cursor.execute(
+                    """
+                    DELETE FROM facts
+                    WHERE created_date = %s;
+                    """,
+                    (i,),
+                )
+
+
+    # Commit transaction
+    connection.commit()
+
+    # except Exception as e:
+    #     print(f"Error executing SQL statements: {e}")
+    #     connection.rollback()
+
+    # finally:
+    #     cursor.close()
+    #     connection.close()
