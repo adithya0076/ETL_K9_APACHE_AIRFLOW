@@ -37,19 +37,32 @@ def load_data(ti):
     connection = pg_hook.get_conn()
     cursor = connection.cursor()
 
-    # try:
     cursor.execute("BEGIN;")
-    cursor.execute("SELECT created_date FROM facts;")
-    existing_ids = set(row[0] for row in cursor.fetchall())
+
+    existing_ids = get_existing_ids(cursor)
     print("existing_ids", existing_ids)
 
-    new_ids = set(data["created_date"] for data in k9_data)
+    new_ids = {data["created_date"] for data in k9_data}
     print("new ids", new_ids)
-
     filtered_ids = new_ids - existing_ids
     print("filtered_ids", filtered_ids)
 
-    ## insert function
+    insert_new_data(cursor, filtered_ids, k9_data, connection)
+
+    update_existing_data(cursor, existing_ids, k9_data, connection)
+
+    delete_old_data(cursor, existing_ids, new_ids, connection)
+
+    cursor.close()
+    connection.close()
+
+
+def get_existing_ids(cursor):
+    cursor.execute("SELECT created_date FROM facts;")
+    return {row[0] for row in cursor.fetchall()}
+
+
+def insert_new_data(cursor, filtered_ids, k9_data, connection):
     for i in filtered_ids:
         for item in k9_data:
             if item["created_date"] == i:
@@ -65,7 +78,7 @@ def load_data(ti):
                     SET category = EXCLUDED.category,
                         updated_at = CURRENT_TIMESTAMP
                     RETURNING id;
-                """,
+                    """,
                     (fact, category, created_date),
                 )
 
@@ -77,19 +90,20 @@ def load_data(ti):
                     SELECT %s, %s, COALESCE(MAX(version), 0) + 1, CURRENT_TIMESTAMP
                     FROM fact_versions
                     WHERE fact_id = %s
-                """,
+                    """,
                     (fact_id, fact, fact_id),
                 )
     connection.commit()
 
-    # update flow
+
+def update_existing_data(cursor, existing_ids, k9_data, connection):
     for i in existing_ids:
         for data in k9_data:
             fact = data["fact"]
             category = data["category"]
             created_date = data["created_date"]
 
-            if item["created_date"] == i:
+            if data["created_date"] == i:
                 cursor.execute(
                     """
                     SELECT fact FROM facts WHERE created_date = %s;
@@ -124,11 +138,10 @@ def load_data(ti):
                             """,
                             (fact_id, fact, fact_id),
                         )
-                print("existing_fact", existing_fact)
-
     connection.commit()
 
-    # delete flow
+
+def delete_old_data(cursor, existing_ids, new_ids, connection):
     for i in existing_ids:
         if i not in new_ids:
             print("deleting data")
@@ -139,7 +152,4 @@ def load_data(ti):
                 """,
                 (i,),
             )
-
     connection.commit()
-    cursor.close()
-    connection.close()
